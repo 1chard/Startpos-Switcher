@@ -48,6 +48,10 @@
 # ILY vscode
 **/.vscode
 .idea/
+.vs
 
 # clangd
 .cache/
+
+# CMakeSettings
+CMakeSettings.json

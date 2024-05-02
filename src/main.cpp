@@ -10,8 +10,6 @@ using namespace geode::prelude;
 std::vector<StartPosObject*> startPos = {};
 int selectedStartpos = 0;
 
-bool a = false;
-
 CCLabelBMFont* label;
 CCMenu* menu;
 
@@ -41,7 +39,7 @@ void switchToStartpos(int incBy, bool actuallySwitch = true)
 
         for (size_t i = 0; i < startPos.size(); i++)
         {
-            startPos[i]->m_startSettings->m_disableStartPos = startPosObject == startPos[i];
+            startPos[i]->m_startSettings->m_disableStartPos = i == selectedStartpos;
         }
 
         PlayLayer::get()->setStartPosObject(startPosObject);
@@ -209,6 +207,9 @@ class $modify(PlayLayer)
 
         auto res = PlayLayer::create(p0, p1, p2);
 
+        // how to make this line execute before level load?
+        res->setStartPosObject(nullptr);
+
         switchToStartpos(0, false);
 
         if (startPos.size() == 0)
@@ -303,10 +304,6 @@ class $modify (StartPosObject)
         if (auto plr = PlayLayer::get())
         {
             startPos.push_back(static_cast<StartPosObject*>(this));
-            selectedStartpos = -1;
-            this->m_startSettings->m_disableStartPos = true;
-
-            plr->setStartPosObject(nullptr);
         }
 
         return true;
