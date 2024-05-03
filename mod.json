@@ -17,6 +17,12 @@
             "description": "Show the UI?",
             "type": "bool",
             "default": true
+        },
+		"sort-triggers": {
+            "name": "Sort StartPos triggers",
+            "description": "Sort StartPos triggers according to their position",
+            "type": "bool",
+            "default": true
         }
 	}
 }

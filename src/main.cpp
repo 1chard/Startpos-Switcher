@@ -9,6 +9,8 @@ using namespace geode::prelude;
 
 std::vector<StartPosObject*> startPos = {};
 int selectedStartpos = 0;
+bool levelStarted = false;
+bool shouldDefaultStartpos = true;
 
 CCLabelBMFont* label;
 CCMenu* menu;
@@ -21,70 +23,7 @@ $execute
     #endif
 }
 
-void switchToStartpos(int incBy, bool actuallySwitch = true)
-{
-    selectedStartpos += incBy;
-
-    if (selectedStartpos < -1)
-        selectedStartpos = startPos.size() - 1;
-        
-    if (selectedStartpos >= startPos.size())
-        selectedStartpos = -1;
-
-    log::info("startpos: {}", selectedStartpos);
-
-    if (actuallySwitch)
-    {
-        StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
-
-        for (size_t i = 0; i < startPos.size(); i++)
-        {
-            startPos[i]->m_startSettings->m_disableStartPos = i == selectedStartpos;
-        }
-
-        PlayLayer::get()->setStartPosObject(startPosObject);
-        GameManager::get()->getPlayLayer()->resetLevel();
-
-        PlayLayer::get()->prepareMusic(false);
-
-        return;/*
-        
-
-        // delete the startposcheckpoint (see playlayer_resetlevel line 148 in ida)
-
-        #ifdef GEODE_IS_WINDOWS
-        int offset = 0x2e6c;// 0xB85;// 0xA6A;
-        #endif
-        
-        #ifdef GEODE_IS_ANDROID32
-        int offset = 0xB93 - 0x16;
-        #endif
-
-        #ifdef GEODE_IS_ANDROID64
-        int offset = 0x718 - 0x16;
-        #endif
-
-        //;
-        GameManager::get()->getPlayLayer()->startMusic();
-
-        //auto* startPosCheckpoint = reinterpret_cast<uintptr_t*>(((uintptr_t)pl) + offset);
-        //int* startPosCheckpoint = (int*)GameManager::get()->getPlayLayer() + offset;//2949
-        auto startPosCheckpoint = (reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(PlayLayer::get()) + offset));
-        *startPosCheckpoint = 0;
-
-        if (!startPosObject && selectedStartpos != -1)
-            return;
-
-        //reinterpret_cast<void(__thiscall*)(PlayLayer*, StartPosObject*)>(base::get() + 0x199E90)(GameManager::get()->getPlayLayer(), startPosObject);
-        
-
-        GameManager::get()->getPlayLayer()->resetLevel();
-
-        // apparently you have to start music manually since gd only does it if you dont have a startpos???? (see
-        // playlayer_resetlevel line 272 in ida)
-        GameManager::get()->getPlayLayer()->startMusic();*/
-    }
-
+void updateLabel(){
     std::stringstream ss;
     ss << selectedStartpos + 1;
     ss << "/";
@@ -93,12 +32,40 @@ void switchToStartpos(int incBy, bool actuallySwitch = true)
     label->setString(ss.str().c_str());
 }
 
+void switchToStartpos(int incBy)
+{
+    if(!levelStarted)
+        return;
+
+    shouldDefaultStartpos = false;
+
+    selectedStartpos += incBy;
+
+    if (selectedStartpos < -1)
+        selectedStartpos = startPos.size() - 1;
+        
+    if (selectedStartpos >= startPos.size())
+        selectedStartpos = -1;
+
+    updateLabel();
+
+    log::info("startpos: {}", selectedStartpos);
+
+    StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
+
+    auto playLayer = PlayLayer::get();
+
+    playLayer->setStartPosObject(startPosObject);
+    playLayer->fullReset();
+}
+
 class StartposSwitcher
 {
     public:
         void onLeft(CCObject*)
         {
             switchToStartpos(-1);
+            
         }
 
         void onRight(CCObject*)
@@ -162,23 +129,12 @@ void onDown(enumKeyCodes key)
 
     if (left)
     {
-        selectedStartpos--;
-
-        if (selectedStartpos < -1)
-            selectedStartpos = startPos.size() - 1;
+        switchToStartpos(-1);
     }
 
     if (right)
     {
-        selectedStartpos++;
-        
-        if (selectedStartpos >= startPos.size())
-            selectedStartpos = -1;
-    }
-
-    if (left || right)
-    {
-        switchToStartpos(0);
+        switchToStartpos(1);
     }
 }
 
@@ -204,38 +160,63 @@ class $modify(PlayLayer)
     {
         startPos.clear();
         selectedStartpos = -1;
+        levelStarted = false;
+        shouldDefaultStartpos = true;
 
         auto res = PlayLayer::create(p0, p1, p2);
 
-        // how to make this line execute before level load?
-        res->setStartPosObject(nullptr);
-
-        switchToStartpos(0, false);
-
         if (startPos.size() == 0)
             menu->setVisible(false);
+        else {
+            if(Mod::get()->getSettingValue<bool>("sort-triggers")){
+                std::sort(startPos.begin(), startPos.end(), [](StartPosObject* a1, StartPosObject* a2){
+                    return a1->getPositionX() < a2->getPositionX();
+                });
+            }
+        
+            float highestPositionX = 0.f;
 
+            for (size_t i = 0; i < startPos.size(); i++)
+            {
+                auto start = startPos[i];
+
+                if(!start->m_startSettings->m_disableStartPos && start->getPositionX() > highestPositionX){
+                    selectedStartpos = i;
+                    highestPositionX = start->getPositionX();
+                }
+            }
+
+            // necessary else the game will loop into a single startpos
+            res->setStartPosObject(nullptr);
+
+            updateLabel();
+        }
+        
         return res;
+    }
+
+    void delayedResetLevel(){
+        if(shouldDefaultStartpos){
+            // we put current startpos here instead of init() so it does not loop
+            StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
+            PlayLayer::setStartPosObject(startPosObject);
+        }
+
+        PlayLayer::delayedResetLevel();
+    }
+
+    void startGame(){ // this function trigger when player start to move at attempt 1
+        if(!levelStarted) // unlock switcher
+            levelStarted = true;
+
+        PlayLayer::startGame();
     }
 
     void resetLevel()
     {
         PlayLayer::resetLevel();
-
-        PlayLayer::get()->prepareMusic(false);
-    }
-
-    virtual void postUpdate(float p0)
-    {
-        PlayLayer::postUpdate(p0);
-        
-        std::stringstream ss;
-        ss << selectedStartpos + 1;
-        ss << "/";
-        ss << startPos.size();
-
-        label->setString(ss.str().c_str());
-    }
+        PlayLayer::prepareMusic(false);
+    } 
 };
 
 class $modify (UILayer)
