@@ -35,32 +35,6 @@ void updateLabel() {
     label->setString(ss.str().c_str());
 }
 
-void switchToStartpos(int incBy) {
-    if (!levelStarted)
-        return;
-
-    shouldDefaultStartpos = false;
-
-    selectedStartpos += incBy;
-
-    if (selectedStartpos < -1)
-        selectedStartpos = startPos.size() - 1;
-
-    if (selectedStartpos >= startPos.size())
-        selectedStartpos = -1;
-
-    updateLabel();
-
-    log::info("startpos: {}", selectedStartpos);
-
-    StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
-
-    auto playLayer = PlayLayer::get();
-
-    playLayer->setStartPosObject(startPosObject);
-    playLayer->fullReset();
-}
-
 auto newSprite(const char* name) {
     auto sprite = CCSprite::createWithSpriteFrameName(name);
     sprite->setOpacity(Mod::get()->getSettingValue<int64_t>("ui-opacity"));
@@ -89,7 +63,23 @@ auto spriteControllerRight() {
 
 #endif
 
-void onMove(int incBy) {
+void switchToStartpos(int incBy) {
+    if (!levelStarted)
+        return;
+
+    shouldDefaultStartpos = false;
+
+    selectedStartpos += incBy;
+
+    if (selectedStartpos < -1)
+        selectedStartpos = startPos.size() - 1;
+
+
+    if (selectedStartpos >= startPos.size())
+        selectedStartpos = -1;
+
+    updateLabel();
+
 #ifndef GEODE_IS_ANDROID // ignore extra args on mobile
 
     if (controllerOn != PlatformToolbox::isControllerConnected()) {
@@ -121,18 +111,25 @@ void onMove(int incBy) {
 
 #endif
 
-    switchToStartpos(incBy);
+    StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
+
+    auto playLayer = PlayLayer::get();
+
+    playLayer->m_isTestMode = startPosObject != nullptr;
+
+    playLayer->setStartPosObject(startPosObject);
+    playLayer->fullReset();
 }
 
 class StartposSwitcher
 {
 public:
     void onLeft(CCObject*) {
-        onMove(-1);
+        switchToStartpos(-1);
     }
 
     void onRight(CCObject*) {
-        onMove(1);
+        switchToStartpos(1);
     }
 };
 
@@ -182,11 +179,11 @@ void onDown(enumKeyCodes key) {
     }
 
     if (left) {
-        onMove(-1);
+        switchToStartpos(-1);
     }
 
     if (right) {
-        onMove(1);
+        switchToStartpos(1);
     }
 }
 
@@ -248,6 +245,15 @@ class $modify(PlayLayer) {
         }
 
         PlayLayer::delayedResetLevel();
+    }
+
+    void levelComplete() {
+        if (shouldDefaultStartpos) { // we put current startpos here (on success) instead of init() so it does not loop
+            StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
+            PlayLayer::setStartPosObject(startPosObject);
+        }
+
+        PlayLayer::levelComplete();
     }
 
     void startGame() {// this function trigger when player start to move at attempt 1
