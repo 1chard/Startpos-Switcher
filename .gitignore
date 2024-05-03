@@ -55,3 +55,6 @@
 
 # CMakeSettings
 CMakeSettings.json
+
+# editorconfig
+.editorconfig

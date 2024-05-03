@@ -11,19 +11,22 @@ std::vector<StartPosObject*> startPos = {};
 int selectedStartpos = 0;
 bool levelStarted = false;
 bool shouldDefaultStartpos = true;
+bool controllerOn = false;
 
 CCLabelBMFont* label;
 CCMenu* menu;
+CCMenuItemSpriteExtra* leftBtn;
+CCMenuItemSpriteExtra* rightBtn;
 
 $execute
 {
-    #ifdef GEODE_IS_ANDROID64
-    //1F2003D5
-    Mod::get()->patch(reinterpret_cast<void *>(geode::base::get() + 0x82803c), {0x1F, 0x20, 0x03, 0xD5});
-    #endif
+#ifdef GEODE_IS_ANDROID64
+    // 1F2003D5
+    Mod::get()->patch(reinterpret_cast<void*>(geode::base::get() + 0x82803c), {0x1F, 0x20, 0x03, 0xD5});
+#endif
 }
 
-void updateLabel(){
+void updateLabel() {
     std::stringstream ss;
     ss << selectedStartpos + 1;
     ss << "/";
@@ -32,9 +35,8 @@ void updateLabel(){
     label->setString(ss.str().c_str());
 }
 
-void switchToStartpos(int incBy)
-{
-    if(!levelStarted)
+void switchToStartpos(int incBy) {
+    if (!levelStarted)
         return;
 
     shouldDefaultStartpos = false;
@@ -43,7 +45,7 @@ void switchToStartpos(int incBy)
 
     if (selectedStartpos < -1)
         selectedStartpos = startPos.size() - 1;
-        
+
     if (selectedStartpos >= startPos.size())
         selectedStartpos = -1;
 
@@ -59,23 +61,84 @@ void switchToStartpos(int incBy)
     playLayer->fullReset();
 }
 
+auto newSprite(const char* name) {
+    auto sprite = CCSprite::createWithSpriteFrameName(name);
+    sprite->setOpacity(Mod::get()->getSettingValue<int64_t>("ui-opacity"));
+    return sprite;
+}
+
+auto spriteNormalLeft() {
+    return newSprite("GJ_arrow_02_001.png");
+}
+
+auto spriteNormalRight() {
+    auto sprite = spriteNormalLeft();
+    sprite->setFlipX(true);
+    return sprite;
+}
+
+#ifndef GEODE_IS_ANDROID
+
+auto spriteControllerLeft() {
+    return newSprite("controllerBtn_DPad_Left_001.png");
+}
+
+auto spriteControllerRight() {
+    return newSprite("controllerBtn_DPad_Right_001.png");
+}
+
+#endif
+
+void onMove(int incBy) {
+#ifndef GEODE_IS_ANDROID // ignore extra args on mobile
+
+    if (controllerOn != PlatformToolbox::isControllerConnected()) {
+        controllerOn = !controllerOn;
+
+        CCSprite* leftSprTarget;
+        CCSprite* rightSprTarget;
+
+        if (controllerOn) {
+            leftSprTarget = spriteControllerLeft();
+            rightSprTarget = spriteControllerRight();
+        }
+        else {
+            leftSprTarget = spriteNormalLeft();
+            rightSprTarget = spriteNormalRight();
+        }
+
+        leftBtn->setSprite(leftSprTarget);
+        leftBtn->setContentWidth(50);
+        leftBtn->setContentHeight(50);
+
+        rightBtn->setSprite(rightSprTarget);
+        rightBtn->setContentWidth(50);
+        rightBtn->setContentHeight(50);
+
+        leftSprTarget->setPosition(leftBtn->getContentSize() / 2);
+        rightSprTarget->setPosition(rightBtn->getContentSize() / 2);
+    }
+
+#endif
+
+    switchToStartpos(incBy);
+}
+
 class StartposSwitcher
 {
-    public:
-        void onLeft(CCObject*)
-        {
-            switchToStartpos(-1);
-            
-        }
+public:
+    void onLeft(CCObject*) {
+        onMove(-1);
+    }
 
-        void onRight(CCObject*)
-        {
-            switchToStartpos(1);
-        }
+    void onRight(CCObject*) {
+        onMove(1);
+    }
 };
 
-void onDown(enumKeyCodes key)
-{
+#ifndef GEODE_IS_ANDROID
+
+void onDown(enumKeyCodes key) {
     if (startPos.size() == 0)
         return;
 
@@ -91,62 +154,47 @@ void onDown(enumKeyCodes key)
         enumKeyCodes::CONTROLLER_Right,
     };
 
-    #ifndef GEODE_IS_ANDROID
-
-    if (!PlayLayer::get()->m_player1->m_isPlatformer)
-    {
-        //leftKeys.push_back(enumKeyCodes::KEY_W);
+    if (!PlayLayer::get()->m_player1->m_isPlatformer) {
+        // leftKeys.push_back(enumKeyCodes::KEY_W);
         leftKeys.push_back(enumKeyCodes::KEY_Left);
 
-        //rightKeys.push_back(enumKeyCodes::KEY_D);
+        // rightKeys.push_back(enumKeyCodes::KEY_D);
         rightKeys.push_back(enumKeyCodes::KEY_Right);
     }
 
-    if (!PlayLayer::get()->m_isPracticeMode)
-    {
+    if (!PlayLayer::get()->m_isPracticeMode) {
         leftKeys.push_back(enumKeyCodes::KEY_Z);
 
         rightKeys.push_back(enumKeyCodes::KEY_X);
     }
 
-    #endif
-
     bool left = false;
     bool right = false;
 
-    for (size_t i = 0; i < leftKeys.size(); i++)
-    {
+    for (size_t i = 0; i < leftKeys.size(); i++) {
         if (key == leftKeys[i])
             left = true;
     }
 
-    for (size_t i = 0; i < rightKeys.size(); i++)
-    {
+    for (size_t i = 0; i < rightKeys.size(); i++) {
         if (key == rightKeys[i])
             right = true;
     }
-    
 
-    if (left)
-    {
-        switchToStartpos(-1);
+    if (left) {
+        onMove(-1);
     }
 
-    if (right)
-    {
-        switchToStartpos(1);
+    if (right) {
+        onMove(1);
     }
 }
 
-class $modify (CCKeyboardDispatcher)
-{
-    bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool idk)
-    {
-        if (!CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, idk))     
-            return false;
+class $modify(CCKeyboardDispatcher) {
+    bool dispatchKeyboardMSG(enumKeyCodes key, bool down, bool idk) {
+        if (!CCKeyboardDispatcher::dispatchKeyboardMSG(key, down, idk)) return false;
 
-        if (PlayLayer::get() && down && !idk)
-        {
+        if (PlayLayer::get() && down && !idk) {
             onDown(key);
         }
 
@@ -154,10 +202,10 @@ class $modify (CCKeyboardDispatcher)
     }
 };
 
-class $modify(PlayLayer)
-{
-    static PlayLayer* create(GJGameLevel* p0, bool p1, bool p2)
-    {
+#endif
+
+class $modify(PlayLayer) {
+    static PlayLayer* create(GJGameLevel * p0, bool p1, bool p2) {
         startPos.clear();
         selectedStartpos = -1;
         levelStarted = false;
@@ -168,19 +216,17 @@ class $modify(PlayLayer)
         if (startPos.size() == 0)
             menu->setVisible(false);
         else {
-            if(Mod::get()->getSettingValue<bool>("sort-triggers")){
-                std::sort(startPos.begin(), startPos.end(), [](StartPosObject* a1, StartPosObject* a2){
-                    return a1->getPositionX() < a2->getPositionX();
-                });
+            if (Mod::get()->getSettingValue<bool>("sort-triggers")) {
+                std::sort(startPos.begin(), startPos.end(), [](StartPosObject* a1, StartPosObject* a2)
+                    { return a1->getPositionX() < a2->getPositionX(); });
             }
-        
+
             float highestPositionX = 0.f;
 
-            for (size_t i = 0; i < startPos.size(); i++)
-            {
+            for (size_t i = 0; i < startPos.size(); i++) {
                 auto start = startPos[i];
 
-                if(!start->m_startSettings->m_disableStartPos && start->getPositionX() > highestPositionX){
+                if (!start->m_startSettings->m_disableStartPos && start->getPositionX() > highestPositionX) {
                     selectedStartpos = i;
                     highestPositionX = start->getPositionX();
                 }
@@ -191,13 +237,12 @@ class $modify(PlayLayer)
 
             updateLabel();
         }
-        
+
         return res;
     }
 
-    void delayedResetLevel(){
-        if(shouldDefaultStartpos){
-            // we put current startpos here instead of init() so it does not loop
+    void delayedResetLevel() {
+        if (shouldDefaultStartpos) { // we put current startpos here (on death) instead of init() so it does not loop
             StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
             PlayLayer::setStartPosObject(startPosObject);
         }
@@ -205,31 +250,28 @@ class $modify(PlayLayer)
         PlayLayer::delayedResetLevel();
     }
 
-    void startGame(){ // this function trigger when player start to move at attempt 1
-        if(!levelStarted) // unlock switcher
+    void startGame() {// this function trigger when player start to move at attempt 1
+        if (!levelStarted) // unlock switcher
             levelStarted = true;
 
         PlayLayer::startGame();
     }
 
-    void resetLevel()
-    {
+    void resetLevel() {
         PlayLayer::resetLevel();
         PlayLayer::prepareMusic(false);
-    } 
+    }
 };
 
-class $modify (UILayer)
-{
-    bool init(GJBaseGameLayer* idk)
-    {
-        if (!UILayer::init(idk))
-            return false;
+class $modify(UILayer) {
+    bool init(GJBaseGameLayer * idk) {
+        if (!UILayer::init(idk)) return false;
 
         if (!typeinfo_cast<PlayLayer*>(idk))
             return true;
 
         menu = CCMenu::create();
+        menu->setID("startpos-switcher");
         menu->setPosition(ccp(CCDirector::get()->getWinSize().width / 2, 25));
         menu->setContentSize(ccp(0, 0));
         menu->setScale(0.6f);
@@ -237,35 +279,39 @@ class $modify (UILayer)
 
         label = CCLabelBMFont::create("0/0", "bigFont.fnt");
         label->setPosition(ccp(0, 0));
-        label->setOpacity(100);
+        label->setOpacity(Mod::get()->getSettingValue<int64_t>("ui-opacity"));
 
-        auto leftSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
-        leftSpr->setOpacity(100);
+        CCSprite* leftSprTarget;
+        CCSprite* rightSprTarget;
 
-        auto leftBtn = CCMenuItemSpriteExtra::create(leftSpr, menu, menu_selector(StartposSwitcher::onLeft));
-        leftBtn->setContentSize(leftBtn->getContentSize() * 5);
-        leftSpr->setPosition(leftBtn->getContentSize() / 2);
+#ifndef GEODE_IS_ANDROID // only create controller sprites on pc
+        controllerOn = PlatformToolbox::isControllerConnected();
+
+        if (controllerOn) {
+            leftSprTarget = spriteControllerLeft();
+            rightSprTarget = spriteControllerRight();
+        }
+        else {
+            leftSprTarget = spriteNormalLeft();
+            rightSprTarget = spriteNormalRight();
+        }
+#else
+        leftSprTarget = spriteNormalLeft();
+        rightSprTarget = spriteNormalRight();
+#endif
+
+        leftBtn = CCMenuItemSpriteExtra::create(leftSprTarget, menu, menu_selector(StartposSwitcher::onLeft));
+        leftBtn->setContentWidth(50);
+        leftBtn->setContentHeight(50);
         leftBtn->setPosition(ccp(-85, 0));
 
-        auto rightSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
-        rightSpr->setFlipX(true);
-        rightSpr->setOpacity(100);
-
-        auto rightBtn = CCMenuItemSpriteExtra::create(rightSpr, menu, menu_selector(StartposSwitcher::onRight));
-        rightBtn->setContentSize(rightBtn->getContentSize() * 5);
-        rightSpr->setPosition(rightBtn->getContentSize() / 2);
+        rightBtn = CCMenuItemSpriteExtra::create(rightSprTarget, menu, menu_selector(StartposSwitcher::onRight));
+        rightBtn->setContentWidth(50);
+        rightBtn->setContentHeight(50);
         rightBtn->setPosition(ccp(85, 0));
 
-        if (PlatformToolbox::isControllerConnected())
-        {
-            auto leftCtrl = CCSprite::createWithSpriteFrameName("controllerBtn_DPad_Left_001.png");
-            leftCtrl->setPosition(ccp(0, -15));
-            leftSpr->addChild(leftCtrl);
-
-            auto rightCtrl = CCSprite::createWithSpriteFrameName("controllerBtn_DPad_Right_001.png");
-            rightCtrl->setPosition(ccp(0, -15));
-            rightSpr->addChild(rightCtrl);
-        }
+        leftSprTarget->setPosition(leftBtn->getContentSize() / 2);
+        rightSprTarget->setPosition(rightBtn->getContentSize() / 2);
 
         menu->addChild(label);
         menu->addChild(leftBtn);
@@ -275,15 +321,11 @@ class $modify (UILayer)
     }
 };
 
-class $modify (StartPosObject)
-{
-    virtual bool init()
-    {
-        if (!StartPosObject::init())
-            return false;
+class $modify(StartPosObject) {
+    virtual bool init() {
+        if (!StartPosObject::init()) return false;
 
-        if (auto plr = PlayLayer::get())
-        {
+        if (auto plr = PlayLayer::get()) {
             startPos.push_back(static_cast<StartPosObject*>(this));
         }
 

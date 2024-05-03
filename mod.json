@@ -18,6 +18,19 @@
             "type": "bool",
             "default": true
         },
+		"ui-opacity": {
+            "name": "UI opacity",
+            "description": "How opaque the startpos UI should be?",
+            "type": "int",
+            "default": 100,
+            "min": 0,
+            "max": 255,
+            "control": {
+                "slider": true,
+				"arrows": false,
+				"input": false
+            }
+        },
 		"sort-triggers": {
             "name": "Sort StartPos triggers",
             "description": "Sort StartPos triggers according to their position",
