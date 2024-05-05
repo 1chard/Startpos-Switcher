@@ -7,6 +7,12 @@
 
 using namespace geode::prelude;
 
+// TODO map offset for others devices, offset-less mode is not performant 
+#ifdef GEODE_IS_WINDOWS
+#define HAS_STARTPOS_OFFSET
+int offset = 0xB85;
+#endif
+
 std::vector<StartPosObject*> startPos = {};
 int selectedStartpos = 0;
 bool levelStarted = false;
@@ -17,14 +23,6 @@ CCLabelBMFont* label;
 CCMenu* menu;
 CCMenuItemSpriteExtra* leftBtn;
 CCMenuItemSpriteExtra* rightBtn;
-
-$execute
-{
-#ifdef GEODE_IS_ANDROID64
-    // 1F2003D5
-    Mod::get()->patch(reinterpret_cast<void*>(geode::base::get() + 0x82803c), {0x1F, 0x20, 0x03, 0xD5});
-#endif
-}
 
 void updateLabel() {
     std::stringstream ss;
@@ -78,9 +76,27 @@ void switchToStartpos(int incBy) {
     if (selectedStartpos >= startPos.size())
         selectedStartpos = -1;
 
+    StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
+
+    auto playLayer = PlayLayer::get();
+
+#ifdef HAS_STARTPOS_OFFSET
+    int* startPosCheckpoint = (int*)playLayer + offset;
+    *startPosCheckpoint = 0;
+#endif
+
+    playLayer->m_isTestMode = startPosObject != nullptr;
+
+    playLayer->setStartPosObject(startPosObject);
+    playLayer->resetLevel();
+
+#ifdef HAS_STARTPOS_OFFSET
+    playLayer->startMusic();
+#endif
+
     updateLabel();
 
-#ifndef GEODE_IS_ANDROID // ignore extra args on mobile
+#ifndef GEODE_IS_ANDROID // ignore controller on android
 
     if (controllerOn != PlatformToolbox::isControllerConnected()) {
         controllerOn = !controllerOn;
@@ -110,15 +126,6 @@ void switchToStartpos(int incBy) {
     }
 
 #endif
-
-    StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
-
-    auto playLayer = PlayLayer::get();
-
-    playLayer->m_isTestMode = startPosObject != nullptr;
-
-    playLayer->setStartPosObject(startPosObject);
-    playLayer->fullReset();
 }
 
 class StartposSwitcher
@@ -229,8 +236,9 @@ class $modify(PlayLayer) {
                 }
             }
 
-            // necessary else the game will loop into a single startpos
+#ifndef HAS_STARTPOS_OFFSET // necessary for offset-less else the game will loop into a single startpos
             res->setStartPosObject(nullptr);
+#endif
 
             updateLabel();
         }
@@ -239,19 +247,25 @@ class $modify(PlayLayer) {
     }
 
     void delayedResetLevel() {
-        if (shouldDefaultStartpos) { // we put current startpos here (on death) instead of init() so it does not loop
+#ifndef HAS_STARTPOS_OFFSET // we put current startpos here (on death) instead of init() so it does not loop
+        if (shouldDefaultStartpos) {
+            log::info("startpos delayedResetLevel");
             StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
             PlayLayer::setStartPosObject(startPosObject);
         }
+#endif
 
         PlayLayer::delayedResetLevel();
     }
 
     void levelComplete() {
-        if (shouldDefaultStartpos) { // we put current startpos here (on success) instead of init() so it does not loop
+#ifndef HAS_STARTPOS_OFFSET // we put current startpos here (on success) instead of init() so it does not loop
+        if (shouldDefaultStartpos) {
+            log::info("startpos levelComplete");
             StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
             PlayLayer::setStartPosObject(startPosObject);
         }
+#endif
 
         PlayLayer::levelComplete();
     }
@@ -263,10 +277,12 @@ class $modify(PlayLayer) {
         PlayLayer::startGame();
     }
 
+#ifndef HAS_STARTPOS_OFFSET // unloop music on mobile
     void resetLevel() {
         PlayLayer::resetLevel();
         PlayLayer::prepareMusic(false);
     }
+#endif
 };
 
 class $modify(UILayer) {
