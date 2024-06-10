@@ -35,7 +35,7 @@ void updateLabel() {
 
 auto newSprite(const char* name) {
     auto sprite = CCSprite::createWithSpriteFrameName(name);
-    sprite->setOpacity(Mod::get()->getSettingValue<int64_t>("ui-opacity"));
+    sprite->setOpacity(100);
     return sprite;
 }
 
@@ -205,46 +205,66 @@ class $modify(CCKeyboardDispatcher) {
         return true;
     }
 };
-
 #endif
 
+void clearData() {
+    startPos.clear();
+    selectedStartpos = -1;
+    levelStarted = false;
+    shouldDefaultStartpos = true;
+}
+
+void initSwitcher(PlayLayer* res) {
+    if (startPos.size() == 0)
+        menu->setVisible(false);
+    else {
+        std::sort(startPos.begin(), startPos.end(), [](StartPosObject* a1, StartPosObject* a2)
+            { return a1->getPositionX() < a2->getPositionX(); });
+
+
+        float highestPositionX = 0.f;
+
+        for (size_t i = 0; i < startPos.size(); i++) {
+            auto start = startPos[i];
+
+            if (!start->m_startSettings->m_disableStartPos && start->getPositionX() > highestPositionX) {
+                selectedStartpos = i;
+                highestPositionX = start->getPositionX();
+            }
+        }
+
+#ifndef HAS_STARTPOS_OFFSET // necessary for offset-less else the game will loop into a single startpos
+        res->setStartPosObject(nullptr);
+#endif
+
+        updateLabel();
+    }
+}
+
 class $modify(PlayLayer) {
+#ifndef GEODE_IS_MACOS // PlayLayer::create isn't called on mac for some reason
     static PlayLayer* create(GJGameLevel * p0, bool p1, bool p2) {
-        startPos.clear();
-        selectedStartpos = -1;
-        levelStarted = false;
-        shouldDefaultStartpos = true;
+        clearData();
 
         auto res = PlayLayer::create(p0, p1, p2);
 
-        if (startPos.size() == 0)
-            menu->setVisible(false);
-        else {
-            if (Mod::get()->getSettingValue<bool>("sort-triggers")) {
-                std::sort(startPos.begin(), startPos.end(), [](StartPosObject* a1, StartPosObject* a2)
-                    { return a1->getPositionX() < a2->getPositionX(); });
-            }
-
-            float highestPositionX = 0.f;
-
-            for (size_t i = 0; i < startPos.size(); i++) {
-                auto start = startPos[i];
-
-                if (!start->m_startSettings->m_disableStartPos && start->getPositionX() > highestPositionX) {
-                    selectedStartpos = i;
-                    highestPositionX = start->getPositionX();
-                }
-            }
-
-#ifndef HAS_STARTPOS_OFFSET // necessary for offset-less else the game will loop into a single startpos
-            res->setStartPosObject(nullptr);
-#endif
-
-            updateLabel();
-        }
+        initSwitcher(res);
 
         return res;
     }
+#else
+    bool init(GJGameLevel * p0, bool p1, bool p2) {
+        if (!PlayLayer::init(p0, p1, p2)) return false;
+
+        initSwitcher(PlayLayer::get());
+
+        return true;
+    }
+    void onQuit() {
+        clearData();
+        PlayLayer::onQuit();
+    }
+#endif
 
     void delayedResetLevel() {
 #ifndef HAS_STARTPOS_OFFSET // we put current startpos here (on death) instead of init() so it does not loop
@@ -301,7 +321,7 @@ class $modify(UILayer) {
 
         label = CCLabelBMFont::create("0/0", "bigFont.fnt");
         label->setPosition(ccp(0, 0));
-        label->setOpacity(Mod::get()->getSettingValue<int64_t>("ui-opacity"));
+        label->setOpacity(100);
 
         CCSprite* leftSprTarget;
         CCSprite* rightSprTarget;
@@ -344,8 +364,20 @@ class $modify(UILayer) {
 };
 
 class $modify(StartPosObject) {
+#ifdef GEODE_IS_MACOS
+    static StartPosObject* create() {
+        auto res = StartPosObject::create();
+
+        if (auto plr = PlayLayer::get()) {
+            startPos.push_back(static_cast<StartPosObject*>(res));
+        }
+
+        return res;
+    }
+#else
     virtual bool init() {
-        if (!StartPosObject::init()) return false;
+        if (!StartPosObject::init())
+            return false;
 
         if (auto plr = PlayLayer::get()) {
             startPos.push_back(static_cast<StartPosObject*>(this));
@@ -353,4 +385,5 @@ class $modify(StartPosObject) {
 
         return true;
     }
+#endif
 };
