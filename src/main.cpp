@@ -7,16 +7,8 @@
 
 using namespace geode::prelude;
 
-// TODO map offset for others devices, offset-less mode is not performant 
-#ifdef GEODE_IS_WINDOWS
-#define HAS_STARTPOS_OFFSET
-int offset = 0xB85;
-#endif
-
 std::vector<StartPosObject*> startPos = {};
-int selectedStartpos = 0;
-bool levelStarted = false;
-bool shouldDefaultStartpos = true;
+int selectedStartpos = -1;
 bool controllerOn = false;
 
 CCLabelBMFont* label;
@@ -62,11 +54,6 @@ auto spriteControllerRight() {
 #endif
 
 void switchToStartpos(int incBy) {
-    if (!levelStarted)
-        return;
-
-    shouldDefaultStartpos = false;
-
     selectedStartpos += incBy;
 
     if (selectedStartpos < -1)
@@ -80,19 +67,13 @@ void switchToStartpos(int incBy) {
 
     auto playLayer = PlayLayer::get();
 
-#ifdef HAS_STARTPOS_OFFSET
-    int* startPosCheckpoint = (int*)playLayer + offset;
-    *startPosCheckpoint = 0;
-#endif
+    playLayer->m_currentCheckpoint = nullptr;
 
     playLayer->m_isTestMode = startPosObject != nullptr;
 
     playLayer->setStartPosObject(startPosObject);
     playLayer->resetLevel();
-
-#ifdef HAS_STARTPOS_OFFSET
     playLayer->startMusic();
-#endif
 
     updateLabel();
 
@@ -207,102 +188,47 @@ class $modify(CCKeyboardDispatcher) {
 };
 #endif
 
-void clearData() {
-    startPos.clear();
-    selectedStartpos = -1;
-    levelStarted = false;
-    shouldDefaultStartpos = true;
-}
-
-void initSwitcher(PlayLayer* res) {
-    if (startPos.size() == 0)
-        menu->setVisible(false);
-    else {
-        std::sort(startPos.begin(), startPos.end(), [](StartPosObject* a1, StartPosObject* a2)
-            { return a1->getPositionX() < a2->getPositionX(); });
-
-
-        float highestPositionX = 0.f;
-
-        for (size_t i = 0; i < startPos.size(); i++) {
-            auto start = startPos[i];
-
-            if (!start->m_startSettings->m_disableStartPos && start->getPositionX() > highestPositionX) {
-                selectedStartpos = i;
-                highestPositionX = start->getPositionX();
-            }
+class $modify(PlayLayer) {
+    // code from qolmod
+    void addObject(GameObject * obj) {
+        if (obj->m_objectID == 31) {
+            startPos.push_back(as<StartPosObject*>(obj));
         }
 
-#ifndef HAS_STARTPOS_OFFSET // necessary for offset-less else the game will loop into a single startpos
-        res->setStartPosObject(nullptr);
-#endif
-
-        updateLabel();
+        PlayLayer::addObject(obj);
     }
-}
 
-class $modify(PlayLayer) {
-#ifndef GEODE_IS_MACOS // PlayLayer::create isn't called on mac for some reason
-    static PlayLayer* create(GJGameLevel * p0, bool p1, bool p2) {
-        clearData();
-
-        auto res = PlayLayer::create(p0, p1, p2);
-
-        initSwitcher(res);
-
-        return res;
-    }
-#else
     bool init(GJGameLevel * p0, bool p1, bool p2) {
         if (!PlayLayer::init(p0, p1, p2)) return false;
 
-        initSwitcher(PlayLayer::get());
+        if (startPos.size() == 0)
+            menu->setVisible(false);
+        else {
+            std::sort(startPos.begin(), startPos.end(), [](StartPosObject* a1, StartPosObject* a2)
+                { return a1->m_realXPosition < a2->m_realXPosition; });
+
+            double highestPositionX = 0.0;
+
+            for (size_t i = 0; i < startPos.size(); i++) {
+                auto start = startPos[i];
+
+                if (!start->m_startSettings->m_disableStartPos && start->m_realXPosition > highestPositionX) {
+                    selectedStartpos = i;
+                    highestPositionX = start->m_realXPosition;
+                }
+            }
+
+            updateLabel();
+        }
 
         return true;
     }
+
     void onQuit() {
-        clearData();
+        startPos.clear();
+        selectedStartpos = -1;
         PlayLayer::onQuit();
     }
-#endif
-
-    void delayedResetLevel() {
-#ifndef HAS_STARTPOS_OFFSET // we put current startpos here (on death) instead of init() so it does not loop
-        if (shouldDefaultStartpos) {
-            log::info("startpos delayedResetLevel");
-            StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
-            PlayLayer::setStartPosObject(startPosObject);
-        }
-#endif
-
-        PlayLayer::delayedResetLevel();
-    }
-
-    void levelComplete() {
-#ifndef HAS_STARTPOS_OFFSET // we put current startpos here (on success) instead of init() so it does not loop
-        if (shouldDefaultStartpos) {
-            log::info("startpos levelComplete");
-            StartPosObject* startPosObject = selectedStartpos == -1 ? nullptr : startPos[selectedStartpos];
-            PlayLayer::setStartPosObject(startPosObject);
-        }
-#endif
-
-        PlayLayer::levelComplete();
-    }
-
-    void startGame() {// this function trigger when player start to move at attempt 1
-        if (!levelStarted) // unlock switcher
-            levelStarted = true;
-
-        PlayLayer::startGame();
-    }
-
-#ifndef HAS_STARTPOS_OFFSET // unloop music on mobile
-    void resetLevel() {
-        PlayLayer::resetLevel();
-        PlayLayer::prepareMusic(false);
-    }
-#endif
 };
 
 class $modify(UILayer) {
@@ -363,27 +289,5 @@ class $modify(UILayer) {
     }
 };
 
-class $modify(StartPosObject) {
-#ifdef GEODE_IS_MACOS
-    static StartPosObject* create() {
-        auto res = StartPosObject::create();
 
-        if (auto plr = PlayLayer::get()) {
-            startPos.push_back(static_cast<StartPosObject*>(res));
-        }
 
-        return res;
-    }
-#else
-    virtual bool init() {
-        if (!StartPosObject::init())
-            return false;
-
-        if (auto plr = PlayLayer::get()) {
-            startPos.push_back(static_cast<StartPosObject*>(this));
-        }
-
-        return true;
-    }
-#endif
-};

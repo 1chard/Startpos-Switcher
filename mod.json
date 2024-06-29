@@ -1,13 +1,13 @@
 {
-	"geode": "2.0.0-beta.26",
+	"geode": "3.1.1",
 	"version": "v1.1.4",
 	"gd": {
-		"win": "2.204",
-		"android": "*",
-		"mac": "2.200",
-		"ios": "2.205"
+		"win": "2.206",
+		"android": "2.206",
+		"mac": "2.206",
+		"ios": "2.206"
 	},
-	"id": "TheSillyDoggo.StartposSwitcher",
+	"id": "thesillydoggo.startposswitcher",
 	"name": "Startpos Switcher",
 	"developer": "TheSillyDoggo",
 	"description": "absolllute in shambles rn",
